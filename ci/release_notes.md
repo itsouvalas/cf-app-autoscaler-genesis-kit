@@ -7,3 +7,6 @@
 
 * Fixes issue where pull upstream would fail to retrieve the corresponding release
 * Fixes issue where the overlay would ignore the deployment and network provided for nats under bosh-dns-aliases addons and the deployment for route registrar job under specific instance groups
+* Fix mixup when extracting exodus data for Cloud Foundry loggregator TLS agent and RLP certs.
+
+* Fixes issue where deploy would fail due to kit not using Bosh DNS runtime config.
