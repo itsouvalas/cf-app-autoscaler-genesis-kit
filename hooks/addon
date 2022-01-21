@@ -17,6 +17,8 @@ The following addons are defined:
 
   #G{setup-cf-plugin}   Adds the 'autoscaler' plugin to the cf cli. Use #y{-f} option
                     to bypass confirmation prompt.
+
+  #G{config-autoscaler} Configures autoscaling for a Cloudfoundry app of your choosing.
 EOF
 )" ""
 }
@@ -84,6 +86,113 @@ bind_autoscaler() {
   exit 0
 }
 
+config_autoscaler() {
+  bold=$(tput bold)
+  normal=$(tput sgr0)
+  cf_login
+  username="$(exodus service_broker_username)"
+  password="$(exodus service_broker_password)"
+
+  printf "%90s" " " | tr ' ' '='
+  echo -e "\nThese are the organizations defined on your Cloudfoundry deployment"
+  cf orgs
+  prompt_for org_name line  \
+    'Type the organization name your application resides on'
+  
+  cf target -o $org_name
+  printf "%90s" " " | tr ' ' '='
+  echo -e "\nThese are the spaces defined for your ${bold}$org_name${normal} orgnization in your Cloudfoundry deployment"
+  cf spaces
+
+  prompt_for space_name line  \
+    'Type the space name your application resides on'
+
+  cf target -o $org_name -s $space_name
+  
+  printf "%90s" " " | tr ' ' '='
+  echo -e "\nThese are the applications running on your Cloudfoundry deployment"
+  cf apps
+  prompt_for app_name line  \
+    'Type the application name you would like to configure autoscaling for'
+    
+  prompt_for app_min line --default "2" \
+    'Type the minimum number of instances running at all times'
+
+  prompt_for app_max line --default "5" \
+    'Type the maximum number of instances running at all times'
+  
+  prompt_for app_metric_type line --default "cpu" \
+    'Type the metric type used for autoscaling'
+  
+  prompt_for app_metric_up line --default "10" \
+    'Type the threshold value at which your instances will scale up'
+
+  prompt_for app_metric_down line --default "1" \
+    'Type the threshold value at which your instances will scale down'
+
+  mkdir -p $GENESIS_ROOT/policies
+
+  function create_policy_json 
+  (
+      cat <<EOF > $GENESIS_ROOT/policies/$org_name-$space_name-$app_name-as-policy.json
+{
+    "instance_min_count": $app_min,
+    "instance_max_count": $app_max,
+    "scaling_rules": [
+        {
+            "metric_type": "$app_metric_type",
+            "breach_duration_secs": 60,
+            "threshold": $app_metric_down,
+            "operator": "<=",
+            "cool_down_secs": 60,
+            "adjustment": "-1"
+        },
+        {
+            "metric_type": "cpu",
+            "breach_duration_secs": 60,
+            "threshold": $app_metric_up,
+            "operator": ">",
+            "cool_down_secs": 60,
+            "adjustment": "+1"
+        }
+    ]
+}
+EOF
+  )
+
+  if [ -f "$GENESIS_ROOT/policies/$org_name-$space_name-$app_name-as-policy.json" ]; then
+  prompt_for policy_overwrite line  \
+    "The policy file aleady exists. Type ${bold}yes${normal} to overwrite it"
+    if [ "$policy_overwrite"="yes" ]; then
+      create_policy_json
+      else
+      exit 0
+      fi
+    else
+    create_policy_json
+  fi
+
+first_as_service_name=$(cf services | grep autoscaler | awk '{print $1}')
+
+printf "%90s" " " | tr ' ' '='
+echo -e "\nThese are the services currently running on your CloudFoundry Deployment"
+cf services
+  prompt_for as_service_name line --default "$first_as_service_name" \
+    'Type the autoscaler service name you would like to use'
+  if cf autoscaling-policy $app_name | grep "The application is not bound to Auto-Scaling service" > /dev/null 2>&1; then
+    cf bind-service $app_name $as_service_name -c $GENESIS_ROOT/policies/$org_name-$space_name-$app_name-as-policy.json
+    else
+      prompt_for policy_reapply line  \
+    "The application is already bound to an Auto-Scaling service. Type ${bold}yes${normal} to re-apply it"
+      if [ "$policy_reapply"="yes" ]; then
+        cf aasp $app_name $GENESIS_ROOT/policies/$org_name-$space_name-$app_name-as-policy.json
+        else
+        exit 0
+      fi
+  fi
+  exit 0
+}
+
 
 case $GENESIS_ADDON_SCRIPT in
 list)
@@ -96,6 +205,10 @@ setup-cf-plugin)
 
 bind|bind-autoscaler)
   bind_autoscaler
+  ;;
+
+config|config-autoscaler)
+  config_autoscaler
   ;;
 
 *)
