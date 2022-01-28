@@ -89,10 +89,12 @@ bind_autoscaler() {
 config_autoscaler() {
   bold=$(tput bold)
   normal=$(tput sgr0)
-  cf_login
-  username="$(exodus service_broker_username)"
-  password="$(exodus service_broker_password)"
-
+  if cf target | grep "FAILED" > /dev/null 2>&1; then
+    cf_login
+    username="$(exodus service_broker_username)"
+    password="$(exodus service_broker_password)"
+  fi
+  
   printf "%90s" " " | tr ' ' '='
   echo -e "\nThese are the organizations defined on your Cloudfoundry deployment"
   cf orgs
