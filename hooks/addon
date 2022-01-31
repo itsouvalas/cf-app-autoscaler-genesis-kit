@@ -89,30 +89,69 @@ bind_autoscaler() {
 config_autoscaler() {
   bold=$(tput bold)
   normal=$(tput sgr0)
-  if cf target | grep "FAILED" > /dev/null 2>&1; then
+
+  function target_new_org_space
+  ( printf "\n"
+    printf "%90s" " " | tr ' ' '='
+    echo -e "\nThese are the organizations defined in your Cloudfoundry deployment"
+    printf "%90s" " " | tr ' ' '=' && printf "\n"
+
+    cf orgs
+    prompt_for org_name line  \
+    'Type the organization name your application resides on'
+
+    cf target -o $org_name
+    printf "\n"
+    printf "%90s" " " | tr ' ' '='
+    echo -e "\nThese are the spaces defined for your ${bold}$org_name${normal} orgnization in your Cloudfoundry deployment"
+    printf "%90s" " " | tr ' ' '=' && printf "\n"
+
+    cf spaces
+
+    prompt_for space_name line  \
+    'Type the space name your application resides on'
+
+    cf target -o $org_name -s $space_name
+
+  )
+
+  current_target=`cf target` || true
+
+  if echo "$current_target" | grep "FAILED" > /dev/null 2>&1; then
     cf_login
     username="$(exodus service_broker_username)"
     password="$(exodus service_broker_password)"
+    target_new_org_space
   fi
-  
-  printf "%90s" " " | tr ' ' '='
-  echo -e "\nThese are the organizations defined on your Cloudfoundry deployment"
-  cf orgs
-  prompt_for org_name line  \
-    'Type the organization name your application resides on'
-  
-  cf target -o $org_name
-  printf "%90s" " " | tr ' ' '='
-  echo -e "\nThese are the spaces defined for your ${bold}$org_name${normal} orgnization in your Cloudfoundry deployment"
-  cf spaces
 
-  prompt_for space_name line  \
-    'Type the space name your application resides on'
+  new_target=$(cf target) || true
 
-  cf target -o $org_name -s $space_name
-  
+  if echo "$new_target" | grep "No org or space targeted" > /dev/null 2>&1; then
+    target_new_org_space
+    new_target=$(cf target)
+  fi
+
+  current_org=$( echo $new_target | awk '{print $10}' )
+  current_space=$( echo $new_target | awk '{print $12}' )
+
+  prompt_for target_new boolean \
+    "You have targeted organization ${bold}$current_org${normal} and space ${bold}$current_space${normal}.
+    Would you like to connect to another org/space?"
+
+        if [[ "$target_new" == "true" ]]; then
+          target_new_org_space
+            new_target=$(cf target)
+            org_name=$( echo $new_target | awk '{print $10}' )
+            space_name=$( echo $new_target | awk '{print $12}' )
+          else
+          org_name=$current_org
+          space_name=$current_space
+        fi
+  printf "\n"
   printf "%90s" " " | tr ' ' '='
-  echo -e "\nThese are the applications running on your Cloudfoundry deployment"
+  echo -e "\nThese are the applications running in your Cloudfoundry deployment"
+  printf "%90s" " " | tr ' ' '=' && printf "\n"
+
   cf apps
   prompt_for app_name line  \
     'Type the application name you would like to configure autoscaling for'
@@ -170,20 +209,22 @@ EOF
 
   if [ -f "$GENESIS_ROOT/policies/$org_name-$space_name-$app_name-as-policy.json" ]; then
   prompt_for policy_overwrite boolean  \
-    "The policy file aleady exists. Overwrite it"
+    "The policy file aleady exists. Overwrite it? Type ${bold}no${normal} to use the one under policies/$org_name-$space_name-$app_name-as-policy.json "
     if [[ "$policy_overwrite" == "true" ]]; then
       create_policy_json
-      else
-      exit 0
+#      else
+#      exit 0
       fi
     else
     create_policy_json
   fi
 
 first_as_service_name=$(cf services | grep autoscaler | awk '{print $1}')
-
+printf "\n"
 printf "%90s" " " | tr ' ' '='
-echo -e "\nThese are the services currently running on your CloudFoundry Deployment"
+echo -e "\nThese are the services currently running in your CloudFoundry Deployment"
+printf "%90s" " " | tr ' ' '=' && printf "\n"
+
 cf services
   prompt_for as_service_name line --default "$first_as_service_name" \
     'Type the autoscaler service name you would like to use'
