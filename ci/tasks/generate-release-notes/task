@@ -11,6 +11,8 @@ touch ${custom_notes}
 cp ${custom_notes} ${notes}
 
 get_releases() {
+    echo "Prints current working directory within get_releases function"
+    pwd
     spruce merge --go-patch spec/results/*.yml | spruce json |jq '.releases | sort_by(.name) | unique_by(.name) | .[]'
 }
 
@@ -23,6 +25,9 @@ get_release_url() {
         echo "https://bosh.io${release_path}?version=${2}"
     fi
 }
+
+echo "Prints before pushd nlock"
+pwd
 
 pushd git-latest-tag > /dev/null
 stable_releases=$(get_releases)
